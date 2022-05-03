@@ -5,7 +5,6 @@ import { MongoClient, ObjectId } from "mongodb";
 import joi from 'joi';
 import dayjs from "dayjs";
 import 'dayjs/locale/pt-br.js'
-import { stripHtml } from "string-strip-html";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -71,15 +70,23 @@ app.post("/messages", async (req,res) =>{
     const {to,text,type} = req.body;    
     const {user: from} = req.headers;
     const schema = joi.object({
-                to:joi.string().required(),
-                text:joi.string().required(),
-                type:joi.valid('message','private_message').required(),
-                from:joi.string().required()
-            })            
-    const {error} = schema.validate({to, text, type,from},{abortEarly: false});
+                to:joi.string().required().messages({
+                    'string.base': "To must be string!",
+                    'string.empty': "To shall not be empty!"}),
+                text:joi.string().required().messages({
+                    'string.base': "Text must be string!",
+                    'string.empty': "Text shall not be empty!"}),
+                type:joi.valid('message','private_message').required().messages({
+                    'any.only':"Must be message or private_message"}),
+                from:joi.string().required().messages({
+                    'string.base': "From must be string!",
+                    'string.empty': "From shall not be empty!"}),
+    })            
+    const {error} = schema.validate({to, text, type,from},{abortEarly: false})
+                  
 
     if(error){
-        res.sendStatus(422);
+        res.status(422).json({error: "VALIDATION_ERROR", message: error.details[0].message});;
         return 
     }
    
@@ -114,7 +121,7 @@ app.get("/messages", async (req,res) =>{
             return
         }        
         const lastMessages = authorizedMessages.splice(-limit);
-        console.log(lastMessages);
+        // console.log(lastMessages);
         res.send(lastMessages);
     }catch(e){
         console.error(e);
@@ -143,6 +150,74 @@ app.post("/status" , async (req,res)=>{
     }
 })
 
+
+app.delete("/messages/:id", async (req,res) =>{
+    const {user} = req.headers;
+    const {id} = req.params;
+    
+    try{
+        const messageId = await db.collection("messages").findOne({_id: new ObjectId(id)})
+        if(!messageId){
+            res.sendStatus(404)
+            return
+        }else if(messageId.from !== user){
+            res.sendStatus(401);
+            return
+        }
+        await db.collection("messages").deleteOne({_id: new ObjectId(id)})
+        res.sendStatus(201);       
+
+    }catch(e){
+        console.error(e)
+        res.sendStatus(500)
+    }
+})
+
+app.put("/messages/:id", async (req,res) =>{
+    const {to, text, type} = req.body;
+    const {user:from} = req.headers;
+    const {id} = req.params;
+
+    const schema = joi.object({        
+        to:joi.string().required().messages({
+            'string.base': "To must be string!",
+            'string.empty': "To shall not be empty!"}),
+        text:joi.string().required().messages({
+            'string.base': "Text must be string!",
+            'string.empty': "Text shall not be empty!"}),
+        type:joi.valid('message','private_message').required().messages({
+            'any.only':"Must be message or private_message"})       
+    })  
+
+    
+    const {error} = schema.validate({to, text, type},{abortEarly: false})                       
+
+    if(error){
+        res.sendStatus(422)
+        return
+    }
+    try{
+        const messageId = await db.collection("messages").findOne({_id: new ObjectId(id)});        
+        if(!messageId){
+            res.sendStatus(404);
+            return
+        }else if(messageId.from!==from){
+            res.sendStatus(401);
+            return
+        }
+        const checkedUser = await db.collection("participants").findOne({name: from});
+        if(!checkedUser){
+            res.sendStatus(422)
+            return
+        }
+
+        await db.collection("messages").updateOne({_id: new ObjectId(id)}, {$set:{from, to, text, type}});
+        res.sendStatus(201);
+    }catch(e){
+        console.error(e);
+        res.sendStatus(500)
+    }
+})
 
 async function inactiveUser(){ 
     try{
