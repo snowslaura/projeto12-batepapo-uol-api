@@ -144,21 +144,27 @@ app.post("/status" , async (req,res)=>{
 })
 
 
-async function inactiveUser(){       
-    const participants = await db.collection("participants").find().toArray(); 
-    const majorStatus = participants.filter(status => ((status.lastStatus + 10000) < Date.now())); 
-    if(majorStatus){
-        majorStatus.forEach(async status =>{
-            await db.collection("participants").deleteOne({_id: new ObjectId(status._id)})
-            await db.collection("messages").insertOne({
-                from: status.name,
-                to: 'Todos',
-                text: 'sai da sala...',
-                type: 'status',
-                time: dayjs().format('HH:mm:ss')
-        })
-        })
-    }
+async function inactiveUser(){ 
+    try{
+        const participants = await db.collection("participants").find().toArray(); 
+        const majorStatus = participants.filter(status => ((status.lastStatus + 10000) < Date.now())); 
+        if(majorStatus){
+            majorStatus.forEach(async status =>{
+                await db.collection("participants").deleteOne({_id: new ObjectId(status._id)})
+                await db.collection("messages").insertOne({
+                    from: status.name,
+                    to: 'Todos',
+                    text: 'sai da sala...',
+                    type: 'status',
+                    time: dayjs().format('HH:mm:ss')
+            })
+            })
+        }
+    }catch(e){
+        console.error(e)
+        res.sendStatus(500)
+    }     
+   
 }  
 
 setInterval(inactiveUser, 15000) 
